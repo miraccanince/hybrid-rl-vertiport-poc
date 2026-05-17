@@ -2,7 +2,6 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
-results/comparison.png
 .venv/
 venv/
 *.egg-info/
