@@ -97,12 +97,3 @@ and saves a two-panel figure to `results/comparison.png`.
   how quickly each mode reduces repeated safety violations
 
 ---
-
-## Relation to Thesis Work
-
-This repository is a self-contained proof of concept prepared ahead of a
-Master's thesis internship at Royal NLR on hybrid reinforcement learning for
-vertiport arrival management. The full thesis will implement a similar
-architecture in the BlueSky air traffic simulation environment, with additional
-complexity including multi-route topology, energy modelling, and variable
-traffic density.
