@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vertiport Arrival Simulation</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: #0d0d1a;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 18px;
+        }
+
+        header h1 {
+            font-size: 1.25rem;
+            font-weight: 500;
+            color: #90caf9;
+            letter-spacing: 0.3px;
+        }
+
+        header p {
+            font-size: 0.78rem;
+            color: #555;
+            margin-top: 4px;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .ctrl-label {
+            font-size: 0.72rem;
+            color: #666;
+            margin-right: 2px;
+        }
+
+        .btn {
+            padding: 5px 14px;
+            border-radius: 4px;
+            border: 1px solid #2a2a4a;
+            background: #1a1a30;
+            color: #bbb;
+            cursor: pointer;
+            font-size: 0.78rem;
+            transition: background 0.12s, color 0.12s;
+        }
+
+        .btn:hover { background: #22223a; color: #e0e0e0; }
+        .btn.active { background: #1565c0; border-color: #1976d2; color: #fff; }
+        .btn.active.orange { background: #e65100; border-color: #ef6c00; }
+
+        .sep { width: 1px; height: 20px; background: #2a2a4a; margin: 0 4px; }
+
+        .layout {
+            display: flex;
+            gap: 14px;
+            max-width: 1020px;
+            margin: 0 auto;
+        }
+
+        #simCanvas {
+            border-radius: 8px;
+            border: 1px solid #1e1e3a;
+            display: block;
+            flex-shrink: 0;
+        }
+
+        .sidebar {
+            width: 176px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .card {
+            background: #13132a;
+            border: 1px solid #1e1e3a;
+            border-radius: 6px;
+            padding: 9px 12px;
+        }
+
+        .card-label {
+            font-size: 0.65rem;
+            color: #555;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+
+        .card-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #90caf9;
+            line-height: 1.3;
+        }
+
+        .card-value.red   { color: #ef5350; }
+        .card-value.amber { color: #ffa726; }
+        .card-value.green { color: #66bb6a; }
+
+        .ac-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 3px 0;
+            font-size: 0.74rem;
+            border-top: 1px solid #1e1e3a;
+        }
+
+        .ac-row:first-child { border-top: none; }
+
+        .dot {
+            display: inline-block;
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+
+        .chart-wrap {
+            max-width: 1020px;
+            margin: 12px auto 0;
+            background: #13132a;
+            border: 1px solid #1e1e3a;
+            border-radius: 8px;
+            padding: 10px 12px;
+        }
+
+        .chart-wrap p {
+            font-size: 0.68rem;
+            color: #555;
+            margin-bottom: 6px;
+        }
+
+        #chartCanvas { display: block; width: 100%; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Hybrid RL Safety Supervisor — Vertiport Arrival PoC</h1>
+    <p>Random policy + rule-based safety supervisor &nbsp;|&nbsp; 3 aircraft, single landing pad</p>
+</header>
+
+<div class="controls">
+    <span class="ctrl-label">Mode:</span>
+    <button class="btn" id="btnA" onclick="setMode('mod_a')">Mod A &nbsp;(flat penalty)</button>
+    <button class="btn active orange" id="btnB" onclick="setMode('mod_b')">Mod B &nbsp;(structured penalty)</button>
+    <div class="sep"></div>
+    <span class="ctrl-label">Speed:</span>
+    <button class="btn active" id="s1" onclick="setSpeed(1, 's1')">1x</button>
+    <button class="btn" id="s3" onclick="setSpeed(3, 's3')">3x</button>
+    <button class="btn" id="s8" onclick="setSpeed(8, 's8')">8x</button>
+    <div class="sep"></div>
+    <button class="btn" onclick="hardReset()">Reset</button>
+</div>
+
+<div class="layout">
+    <canvas id="simCanvas" width="800" height="290"></canvas>
+
+    <div class="sidebar">
+        <div class="card">
+            <div class="card-label">Episode</div>
+            <div class="card-value" id="vEp">1</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Step</div>
+            <div class="card-value" id="vStep">0</div>
+        </div>
+        <div class="card">
+            <div class="card-label">SEP interventions</div>
+            <div class="card-value red" id="vSep">0</div>
+        </div>
+        <div class="card">
+            <div class="card-label">PAD interventions</div>
+            <div class="card-value amber" id="vPad">0</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Episode reward</div>
+            <div class="card-value green" id="vRew">0</div>
+        </div>
+        <div class="card" id="acCard"></div>
+    </div>
+</div>
+
+<div class="chart-wrap">
+    <p>Cumulative safety interventions over time (current session)</p>
+    <canvas id="chartCanvas" width="990" height="90"></canvas>
+</div>
+
+<script>
+// ── constants ────────────────────────────────────────────────────────────────
+const D_MAX   = 100, V_MIN = 1, V_MAX = 5, DV = 1;
+const D_SEP   = 10,  TAU_LAND = 5, MAX_STEPS = 200;
+const R_STEP  = -1,  R_LAND = 20, P_GEN = -10, P_SEP = -15, P_PAD = -8;
+const COLORS  = ['#4fc3f7', '#ffb74d', '#81c784'];
+const NAMES   = ['AC0', 'AC1', 'AC2'];
+const WINDOWS = [[85,95],[65,75],[45,55]];
+
+// ── state ────────────────────────────────────────────────────────────────────
+let mode = 'mod_b';
+let episode = 1, step = 0, tauPad = 0;
+let active, dist, spd;
+let epReward = 0;
+let totalSep = 0, totalPad = 0;
+let sepHist = [], padHist = [];
+let lastLog = null, logTimer = 0;
+let msPerStep = 280, accumulator = 0, lastTs = 0;
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+const rnd  = (lo, hi) => lo + Math.random() * (hi - lo);
+const rInt = (lo, hi) => Math.floor(lo + Math.random() * (hi - lo + 1));
+const clp  = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function resetEp() {
+    tauPad = 0;
+    active = [true, true, true];
+    dist   = WINDOWS.map(w => rInt(w[0], w[1]));
+    spd    = [rnd(2,4), rnd(2,4), rnd(2,4)];
+    step   = 0;
+    epReward = 0;
+    lastLog = null; logTimer = 0;
+}
+
+function decode(a) {
+    const c = [0,0,0];
+    for (let i = 2; i >= 0; i--) { c[i] = (a % 3) - 1; a = Math.floor(a/3); }
+    return c;
+}
+
+function supervisor(cmds) {
+    const safe = [...cmds];
+    const ns   = spd.map((v,i) => clp(v + safe[i]*DV, V_MIN, V_MAX));
+    const nd   = dist.map((d,i) => active[i] ? Math.max(0, d - ns[i]) : d);
+
+    // PAD
+    for (let i = 0; i < 3; i++) {
+        if (!active[i]) continue;
+        if (nd[i] === 0 && tauPad > 0) {
+            safe[i] = spd[i] > V_MIN ? -1 : 0;
+            return { safe, log: { type:'PAD', ac:i } };
+        }
+    }
+    // SEP
+    for (let i = 0; i < 3; i++) for (let j = i+1; j < 3; j++) {
+        if (!active[i] || !active[j]) continue;
+        if (Math.abs(nd[i] - nd[j]) < D_SEP) {
+            const tr = dist[i] > dist[j] ? i : j;
+            safe[tr] = -1;
+            return { safe, log: { type:'SEP', ac:tr } };
+        }
+    }
+    return { safe, log: null };
+}
+
+function tick() {
+    if (!active.some(Boolean)) { episode++; resetEp(); return; }
+
+    step++;
+    const cmds = decode(Math.floor(Math.random() * 27));
+    const { safe, log } = supervisor(cmds);
+
+    for (let i = 0; i < 3; i++) {
+        if (!active[i]) continue;
+        spd[i]  = clp(spd[i] + safe[i]*DV, V_MIN, V_MAX);
+        dist[i] = Math.max(0, dist[i] - spd[i]);
+    }
+
+    tauPad = Math.max(0, tauPad - 1);
+
+    let landed = 0;
+    for (let i = 0; i < 3; i++) {
+        if (active[i] && dist[i] === 0 && tauPad === 0) {
+            active[i] = false; tauPad = TAU_LAND; landed++;
+        }
+    }
+
+    let rew = R_STEP + landed * R_LAND;
+    if (log) {
+        rew += mode === 'mod_b' ? (log.type==='SEP' ? P_SEP : P_PAD) : P_GEN;
+        if (log.type === 'SEP') totalSep++; else totalPad++;
+        lastLog = log; logTimer = 9;
+    } else {
+        if (logTimer > 0) logTimer--; else lastLog = null;
+    }
+
+    epReward += rew;
+    sepHist.push(totalSep); padHist.push(totalPad);
+    if (sepHist.length > 800) { sepHist.shift(); padHist.shift(); }
+    if (step >= MAX_STEPS) { episode++; resetEp(); }
+    updateUI();
+}
+
+// ── canvas refs ──────────────────────────────────────────────────────────────
+const sc  = document.getElementById('simCanvas'),  sx = sc.getContext('2d');
+const cc  = document.getElementById('chartCanvas'), cx = cc.getContext('2d');
+
+const MARGIN = 55, PAD_W = 38;
+
+function toX(d) {
+    const usable = sc.width - MARGIN - PAD_W/2 - 20;
+    return MARGIN + (1 - d/D_MAX) * usable;
+}
+
+function drawSim() {
+    const W = sc.width, H = sc.height, cy = H/2, ch = 64;
+
+    sx.clearRect(0,0,W,H);
+    sx.fillStyle = '#0d0d1a'; sx.fillRect(0,0,W,H);
+
+    // corridor
+    sx.fillStyle = '#181830';
+    sx.beginPath(); sx.roundRect(MARGIN-10, cy-ch/2, W-MARGIN+10-20, ch, 4); sx.fill();
+
+    // dashed center
+    sx.strokeStyle = '#222244'; sx.lineWidth = 1; sx.setLineDash([5,7]);
+    sx.beginPath(); sx.moveTo(MARGIN, cy); sx.lineTo(W-20, cy); sx.stroke();
+    sx.setLineDash([]);
+
+    // distance ticks
+    sx.textAlign = 'center'; sx.font = '9px monospace'; sx.fillStyle = '#333';
+    for (let d = 10; d <= 90; d += 10) {
+        const x = toX(d);
+        sx.fillRect(x-0.5, cy-ch/2, 1, ch);
+        sx.fillText(d, x, cy+ch/2+13);
+    }
+
+    // SEP danger zone between pairs
+    for (let i = 0; i < 3; i++) for (let j = i+1; j < 3; j++) {
+        if (!active[i] || !active[j]) continue;
+        if (Math.abs(dist[i]-dist[j]) < D_SEP) {
+            const xa = toX(Math.max(dist[i],dist[j])), xb = toX(Math.min(dist[i],dist[j]));
+            sx.fillStyle = 'rgba(244,67,54,0.12)';
+            sx.fillRect(xa, cy-ch/2, xb-xa, ch);
+            sx.strokeStyle = 'rgba(244,67,54,0.3)'; sx.lineWidth = 1;
+            sx.strokeRect(xa, cy-ch/2, xb-xa, ch);
+        }
+    }
+
+    // pad
+    const px = toX(0);
+    const padFree = tauPad === 0;
+    sx.shadowColor = padFree ? 'rgba(76,175,80,0.6)' : 'rgba(198,40,40,0.6)';
+    sx.shadowBlur  = 18;
+    sx.fillStyle   = padFree ? '#2e7d32' : '#b71c1c';
+    sx.beginPath(); sx.roundRect(px-PAD_W/2, cy-ch/2, PAD_W, ch, 4); sx.fill();
+    sx.shadowBlur = 0;
+
+    sx.fillStyle = 'rgba(255,255,255,0.9)'; sx.font = 'bold 10px system-ui'; sx.textAlign = 'center';
+    sx.fillText('PAD', px, cy-6);
+    sx.fillText(padFree ? 'FREE' : `τ=${tauPad}`, px, cy+8);
+
+    // intervention flash
+    if (lastLog && logTimer > 5) {
+        const a = ((logTimer-5)/4)*0.08;
+        sx.fillStyle = `rgba(244,67,54,${a})`; sx.fillRect(0,0,W,H);
+    }
+
+    // aircraft
+    for (let i = 0; i < 3; i++) {
+        if (!active[i]) continue;
+        const x = toX(dist[i]);
+        const overridden = lastLog && lastLog.ac===i && logTimer>0;
+
+        if (overridden) { sx.shadowColor='#ef5350'; sx.shadowBlur=22; }
+        sx.beginPath(); sx.arc(x, cy, 19, 0, Math.PI*2);
+        sx.fillStyle = COLORS[i]; sx.fill();
+        sx.shadowBlur = 0;
+
+        sx.fillStyle = '#0d0d1a'; sx.font = 'bold 10px system-ui'; sx.textAlign = 'center';
+        sx.fillText(NAMES[i], x, cy+4);
+
+        sx.fillStyle = COLORS[i]; sx.font = '9px monospace';
+        sx.fillText(`d=${dist[i].toFixed(0)}`, x, cy-28);
+        sx.fillText(`v=${spd[i].toFixed(1)}`, x, cy-18);
+
+        if (overridden) {
+            sx.fillStyle = '#ef5350';
+            sx.beginPath(); sx.roundRect(x-15, cy+23, 30, 13, 2); sx.fill();
+            sx.fillStyle = '#fff'; sx.font = 'bold 8px system-ui';
+            sx.fillText(lastLog.type, x, cy+33);
+        }
+    }
+
+    // landed indicators
+    const landedIdx = [0,1,2].filter(i => !active[i]);
+    landedIdx.forEach((i, n) => {
+        const lx = MARGIN - 30;
+        const ly = cy - 20 + n * 18;
+        sx.beginPath(); sx.arc(lx, ly, 7, 0, Math.PI*2);
+        sx.fillStyle = COLORS[i] + '55'; sx.fill();
+        sx.fillStyle = COLORS[i]+'aa'; sx.font='8px system-ui'; sx.textAlign='center';
+        sx.fillText(NAMES[i], lx, ly+3);
+    });
+
+    // top banner on intervention
+    if (lastLog && logTimer > 0) {
+        const bw = 330, bh = 26, bx = W/2-bw/2, by = 8;
+        const alpha = Math.min(logTimer/9,1);
+        sx.fillStyle = `rgba(183,28,28,${alpha*0.92})`;
+        sx.beginPath(); sx.roundRect(bx,by,bw,bh,4); sx.fill();
+        sx.fillStyle = `rgba(255,255,255,${alpha})`;
+        sx.font = 'bold 10px system-ui'; sx.textAlign='center';
+        sx.fillText(`SUPERVISOR — ${lastLog.type} intervention on ${NAMES[lastLog.ac]}`, W/2, by+17);
+    }
+
+    // mode badge
+    const mColor = mode==='mod_b' ? '#e65100' : '#1565c0';
+    sx.fillStyle=mColor; sx.beginPath(); sx.roundRect(8,8,56,18,3); sx.fill();
+    sx.fillStyle='#fff'; sx.font='bold 9px system-ui'; sx.textAlign='center';
+    sx.fillText(mode==='mod_b'?'MOD B':'MOD A', 36, 20);
+
+    // axis label
+    sx.fillStyle='#333'; sx.font='9px system-ui'; sx.textAlign='left';
+    sx.fillText('← far from pad', MARGIN, H-4);
+    sx.textAlign='right';
+    sx.fillText('pad →', W-22, H-4);
+}
+
+function drawChart() {
+    const W = cc.width, H = cc.height;
+    cx.clearRect(0,0,W,H);
+    cx.fillStyle='#13132a'; cx.fillRect(0,0,W,H);
+
+    if (sepHist.length < 2) return;
+    const n = sepHist.length;
+    const maxV = Math.max(...sepHist, ...padHist, 1);
+
+    function line(data, color) {
+        cx.beginPath(); cx.strokeStyle=color; cx.lineWidth=1.5;
+        for (let i=0; i<data.length; i++) {
+            const x = (i/(n-1))*W;
+            const y = H - 6 - (data[i]/maxV)*(H-12);
+            i===0 ? cx.moveTo(x,y) : cx.lineTo(x,y);
+        }
+        cx.stroke();
+    }
+
+    line(sepHist, '#ef5350');
+    line(padHist, '#ffa726');
+
+    cx.font='9px system-ui'; cx.textAlign='left';
+    cx.fillStyle='#ef5350'; cx.fillText(`SEP: ${totalSep}`, 6, 12);
+    cx.fillStyle='#ffa726'; cx.fillText(`PAD: ${totalPad}`, 66, 12);
+}
+
+function updateUI() {
+    document.getElementById('vEp').textContent   = episode;
+    document.getElementById('vStep').textContent = step;
+    document.getElementById('vSep').textContent  = totalSep;
+    document.getElementById('vPad').textContent  = totalPad;
+    document.getElementById('vRew').textContent  = epReward.toFixed(0);
+
+    document.getElementById('acCard').innerHTML = NAMES.map((n,i) => `
+        <div class="ac-row">
+            <span><span class="dot" style="background:${COLORS[i]}"></span>${n}</span>
+            <span style="color:${COLORS[i]};font-family:monospace;font-size:0.7rem">
+                ${active[i] ? `d=${dist[i].toFixed(0)} v=${spd[i].toFixed(1)}` : 'landed'}
+            </span>
+        </div>`).join('');
+}
+
+// ── loop ─────────────────────────────────────────────────────────────────────
+function loop(ts) {
+    const dt = ts - lastTs; lastTs = ts;
+    accumulator += dt;
+    while (accumulator >= msPerStep) { tick(); accumulator -= msPerStep; }
+    drawSim(); drawChart();
+    requestAnimationFrame(loop);
+}
+
+// ── controls ─────────────────────────────────────────────────────────────────
+function setMode(m) {
+    mode = m;
+    document.getElementById('btnA').classList.toggle('active', m==='mod_a');
+    document.getElementById('btnA').classList.remove('orange');
+    document.getElementById('btnB').classList.toggle('active', m==='mod_b');
+    document.getElementById('btnB').classList.toggle('orange', m==='mod_b');
+}
+
+function setSpeed(s, id) {
+    msPerStep = s===1 ? 280 : s===3 ? 95 : 30;
+    ['s1','s3','s8'].forEach(x => document.getElementById(x).classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+}
+
+function hardReset() {
+    totalSep=0; totalPad=0; episode=1;
+    sepHist=[]; padHist=[];
+    resetEp(); updateUI();
+}
+
+// ── start ─────────────────────────────────────────────────────────────────────
+resetEp(); updateUI();
+lastTs = performance.now();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
